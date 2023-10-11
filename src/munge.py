@@ -15,7 +15,43 @@ def add_unit_activity(data,which_area,which_unit):
         })
     )
 
-def get_step_grasp_release_data(td_shifted):
+def get_step_grasp_release_data(data):
+    '''
+    Get data for step trials, arranged into grasp and release portions
+    '''
+    step_data = (
+        data
+        .groupby('trial type',observed=True)
+        .get_group('step')
+    )
+    step_grasp_data = (
+        step_data
+        .pipe(events.reindex_from_event,'grasp1')
+        .loc[(slice(None),slice(None),slice('-1500 ms','3000 ms'))]
+        .reset_index(level=2)
+        .assign(**{
+            'relative time': lambda df: df['time from grasp1'] / np.timedelta64(1,'s'),
+            'phase': 'grasp',
+        })
+        .drop(columns=[('time from grasp1','')])
+        .set_index(['phase','relative time'],append=True)
+    )
+    step_release_data = (
+        step_data
+        .pipe(events.reindex_from_event,'release1')
+        .loc[(slice(None),slice(None),slice('-3 sec','4 sec'))]
+        .reset_index(level=2)
+        .assign(**{
+            'relative time': lambda df: df['time from release1'] / np.timedelta64(1,'s'),
+            'phase': 'release',
+        })
+        .drop(columns=[('time from release1','')])
+        .set_index(['phase','relative time'],append=True)
+    )
+
+    return pd.concat([step_grasp_data,step_release_data])
+
+def mean_step_grasp_release_data(td_shifted):
     step_data = (
         td_shifted
         .groupby('trial type')

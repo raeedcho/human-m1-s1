@@ -12,20 +12,20 @@ class ReducedRankRegression(BaseEstimator, RegressorMixin, TransformerMixin):
         Fit the model to the data.
         """
         # center X and Y
-        X_centered = X - X.mean(axis=0)
-        Y_centered = y - y.mean(axis=0)
+        self.X_mean_ = X.mean(axis=0)
+        self.y_mean_ = y.mean(axis=0)
+        X_centered = X - self.X_mean_
+        Y_centered = y - self.y_mean_
 
         lr_model = LinearRegression(fit_intercept=False).fit(X_centered, Y_centered)
         b_ols = lr_model.coef_.T
 
-        _, _, Vh = np.linalg.svd(X @ b_ols, full_matrices=False)
+        _, _, decoder_matrix = np.linalg.svd(X_centered @ b_ols, full_matrices=False)
 
-        projector_matrix = Vh[:self.rank, :].T
+        self.decoder_ = decoder_matrix[:self.rank, :]
 
-        self.encoder_ = b_ols @ projector_matrix
-        self.decoder_ = projector_matrix.T
-
-        self.coef_ = self.encoder_ @ self.decoder_
+        self.encoder_, s, vh = np.linalg.svd(b_ols @ self.decoder_.T, full_matrices=False)
+        self.transformer_ = s @ vh
 
         return self
 
@@ -33,10 +33,10 @@ class ReducedRankRegression(BaseEstimator, RegressorMixin, TransformerMixin):
         """
         Predict new data.
         """
-        return X @ self.coef_
+        return self.y_mean_ + (X-self.X_mean_) @ self.encoder_ @ self.transformer_ @ self.decoder_
 
     def transform(self, X):
         """
         Transform new data.
         """
-        return X @ self.encoder_
+        return (X-self.X_mean_) @ self.encoder_

@@ -206,35 +206,3 @@ def crystallize_td(
         .assign(**{col: td[col] for col in single_cols})
         [single_cols+array_cols]
     )
-
-def get_step_grasp_release_data(data):
-    '''
-    Get data for step trials, arranged into grasp and release portions
-    '''
-    step_data = (
-        data
-        .groupby('trial type',observed=True)
-        .get_group('step')
-    )
-    step_grasp_data = (
-        step_data
-        .pipe(events.reindex_from_event,'grasp1')
-        .loc[(slice(None),slice(None),slice('-1500 ms','3000 ms'))]
-        .reset_index()
-        .assign(**{
-            'time from grasp1': lambda df: df['time from grasp1'] / np.timedelta64(1,'s'),
-            'set_trial': lambda df: 100*df['set']+df['trial'],
-        })
-    )
-    step_release_data = (
-        step_data
-        .pipe(events.reindex_from_event,'release1')
-        .loc[(slice(None),slice(None),slice('-3 sec','4 sec'))]
-        .reset_index()
-        .assign(**{
-            'time from release1': lambda df: df['time from release1'] / np.timedelta64(1,'s'),
-            'set_trial': lambda df: 100*df['set']+df['trial'],
-        })
-    )
-
-    return step_grasp_data,step_release_data
