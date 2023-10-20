@@ -69,48 +69,19 @@ def load_data(filename='CRS07_Grasp_03242023.mat'):
         [cols_to_keep]
         .explode(cols_to_explode)
         .assign(**{
+            'set_trial': lambda df: 100*df['set']+df['trial'],
             'trial type': lambda df: df['TrialType'],
             'force level': lambda df: df['Force_levels'].map(condition_force_levels),
             'force': lambda df: df['kin_commforce'],
             'motor': lambda df: df['Motor'].map(lambda arr: arr/bin_size),
             'sensory': lambda df: df['Sensory'].map(lambda arr: arr/bin_size),
         })
-        .drop(columns=['TrialType','Force_levels','kin_commforce','Motor','Sensory'])
-        .set_index(['set','trial','trial_time'])
+        .drop(columns=['set','trial','TrialType','Force_levels','kin_commforce','Motor','Sensory'])
         .astype(signal_types)
-        .filter(items=['trial type','force level','state','force','motor','sensory'])
+        .set_index(['set_trial','trial_time','trial type','force level','state'])
+        .filter(items=['force','motor','sensory'])
         .pipe(crystallize_td)
     )
-
-def norm_and_shift_rates(td,arrays=['motor','sensory'],norm_method='softnorm'):
-    if norm_method.lower()=='zscore':
-        td_scored = td.assign(**{
-            array: lambda df,arr=array: zscore_array(df[arr])
-            for array in arrays
-        })
-    elif norm_method.lower()=='softnorm':
-        td_scored = td.assign(**{
-            array: lambda df,arr=array: softnorm_array(df[arr])
-            for array in arrays
-        })
-    else:
-        Warning('Skipping array norm...')
-        td_scored = td.copy()
-
-    td_baseline = (
-        td_scored
-        .groupby('state')
-        .get_group('pretrial')
-        [arrays]
-        .groupby(['set','trial'])
-        .agg(lambda s: np.nanmean(s,axis=0))
-    )
-    td_shifted = td.assign(**{
-        array: lambda df,arr=array: df[arr]-td_baseline[arr]
-        for array in arrays
-    })
-
-    return td_shifted
 
 def expose_single_col(s: pd.Series):
     return (
@@ -167,21 +138,9 @@ def get_trial_times(temp_df,bin_size='20ms'):
         )
     )
 
-def zscore_array(arr):
-    return StandardScaler().fit_transform(arr)
-
-def softnorm_array(arr,norm_const=5):
-    def get_range(arr,axis=None):
-        return np.nanmax(arr,axis=axis)-np.nanmin(arr,axis=axis)
-    activity_range = get_range(arr,axis=0)
-    return arr/(activity_range+norm_const)
-
 def crystallize_td(
         td,
         single_cols= [
-            'trial type',
-            'force level',
-            'state',
             'force',
         ],
         array_cols=[
@@ -194,6 +153,7 @@ def crystallize_td(
     '''
     return (
         pd.concat(
+            [td[col].rename(0) for col in single_cols] +
             [
                 pd.DataFrame.from_records(
                     td[array_name].values,
@@ -201,8 +161,47 @@ def crystallize_td(
                 ) for array_name in array_cols
             ],
             axis=1,
-            keys=array_cols,
+            keys=single_cols+array_cols,
         )
-        .assign(**{col: td[col] for col in single_cols})
+        #.assign(**{(col,0): td[col] for col in single_cols})
         [single_cols+array_cols]
+        .rename_axis(columns=['signal','channel'])
     )
+
+def norm_and_shift_rates(td,arrays=['motor','sensory'],norm_method='softnorm'):
+    if norm_method.lower()=='zscore':
+        method = zscore_array
+    elif norm_method.lower()=='softnorm':
+        method = softnorm_array
+    else:
+        Warning('Skipping array norm...')
+        method = lambda x: x
+
+    td_scored = td.assign(**{
+        array: lambda df,arr=array: method(df[arr])
+        for array in arrays
+    })
+
+    td_baseline = (
+        td_scored
+        .groupby('state',observed=True)
+        .get_group('pretrial')
+        [arrays]
+        .groupby(['set_trial'])
+        .agg(lambda s: np.nanmean(s,axis=0))
+    )
+    td_shifted = td_scored.assign(**{
+        array: lambda df,arr=array: df[arr]-td_baseline[arr]
+        for array in arrays
+    })
+
+    return td_shifted
+
+def zscore_array(arr):
+    return StandardScaler().fit_transform(arr)
+
+def softnorm_array(arr,norm_const=5):
+    def get_range(arr,axis=None):
+        return np.nanmax(arr,axis=axis)-np.nanmin(arr,axis=axis)
+    activity_range = get_range(arr,axis=0)
+    return arr/(activity_range+norm_const)

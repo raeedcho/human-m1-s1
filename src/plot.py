@@ -6,12 +6,51 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.pipeline import Pipeline
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import FunctionTransformer
+def plot_step_signal(
+    data,
+    signal,
+    channels,
+    how_to_plot=None,
+    height=1.5,
+    aspect=2.5,
+):
+    '''
+    Plot out (signal,channels) of step trials, split into grasp and release phases
+    in a single FacetGrid seaborn figure.
 
-def plot_step_signal(step_grasp_data,step_release_data,signal,axs=None,single_trial=True,add_legend=True):
-    if single_trial:
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Dataframe containing signals and channels
+    signal : str or list of str
+        Signal(s) to plot. If list, signals will be lined up by channel and plotted
+        on the same plot with different line styles
+    channels : index of which channels to plot
+        (default is '', meaning the unnamed channel for single column signals)
+    how_to_plot : str, optional
+        How to plot the signal. Options are:
+        - None: line plot of trial average, with calculated confidence intervals
+        - 'average_only': line plot of trial average without confidence intervals
+        - 'single_trial': line plot of single trials with out average or confidence intervals
+
+    Returns
+    -------
+    FacetGrid object
+    '''
+    
+    if 'phase' not in data.index.names:
+        data = munge.get_step_grasp_release_data(data)
+
+    if type(signal) is not list:
+        signal=[signal]
+    if type(channels) is not list:
+        channels=[channels]
+
+    if how_to_plot=='average_only':
+        extra_kwargs = {
+            'errorbar' : None,
+        }
+    elif how_to_plot=='single_trial':
         extra_kwargs = {
             'units' : 'set_trial',
             'estimator' : None,
@@ -21,82 +60,140 @@ def plot_step_signal(step_grasp_data,step_release_data,signal,axs=None,single_tr
     else:
         extra_kwargs = {}
 
-    if axs is None:
-        fig,axs = plt.subplots(1,2,figsize=(6,4),sharey=True)
+    grasp_release_data = (
+        data
+        [signal]
+        .stack(level='signal')
+        .rename_axis(index={'signal': 'signal type'})
+        [channels]
+        .stack()
+        .to_frame(signal[0])
+    )
 
-    sns.lineplot(
-        step_grasp_data,
-        x='time from grasp1',
-        y=signal,
+    g = sns.relplot(
+        data=grasp_release_data,
+        x='relative time',
+        y=signal[0],
         hue='force level',
         hue_order=['low','medium','high'],
-        ax=axs[0],
-        legend=False,
+        style='signal type',
+        style_order=signal,
+        kind='line',
+        col='phase',
+        row='channel',
+        aspect=aspect,
+        height=height,
+        facet_kws={
+            'sharex': 'col',
+            'sharey': True,
+            'margin_titles': True,
+        },
         **extra_kwargs,
     )
-    sns.despine(ax=axs[0],trim=True)
-    sns.lineplot(
-        step_release_data,
-        x='time from release1',
-        y=signal,
-        hue='force level',
-        hue_order=['low','medium','high'],
-        ax=axs[1],
-        legend=add_legend,
+    g.refline(x=0)
+    g.despine(trim=True)
+    g.tight_layout()
+
+    g.set_axis_labels('Relative time (s)',signal[0])
+    g.set_titles(col_template='{col_name} phase',row_template='channel {row_name}')
+
+    return g
+
+def plot_trial_signal(
+    data,
+    signal,
+    channels,
+    hue='force level',
+    hue_order=['low','medium','high'],
+    how_to_plot=None,
+    height=1.5,
+    aspect=2.5,
+):
+    '''
+    Plot out (signal,channels) of step trials, split into grasp and release phases
+    in a single FacetGrid seaborn figure.
+
+    Parameters
+    ----------
+    data : pandas.DataFrame
+        Dataframe containing signals and channels
+    signal : str or list of str
+        Signal(s) to plot. If list, signals will be lined up by channel and plotted
+        on the same plot with different line styles
+    channels : index of which channels to plot
+        (default is '', meaning the unnamed channel for single column signals)
+    hue: str, optional
+        The name of the column in data to use for coloring trials
+    hue_order: list, optional
+        The order of the hue levels
+    how_to_plot : str, optional
+        How to plot the signal. Options are:
+        - None: line plot of trial average, with calculated confidence intervals
+        - 'average_only': line plot of trial average without confidence intervals
+        - 'single_trial': line plot of single trials with out average or confidence intervals
+
+    Returns
+    -------
+    FacetGrid object
+    '''
+    
+    if type(signal) is not list:
+        signal=[signal]
+    if type(channels) is not list:
+        channels=[channels]
+
+    if 'phase' not in data.index.names:
+        raise ValueError('Data must be indexed by phase')
+
+    if how_to_plot=='average_only':
+        extra_kwargs = {
+            'errorbar' : None,
+        }
+    elif how_to_plot=='single_trial':
+        extra_kwargs = {
+            'units' : 'set_trial',
+            'estimator' : None,
+            'errorbar' : None,
+            'lw' : 0.5,
+        }
+    else:
+        extra_kwargs = {}
+
+    grasp_release_data = (
+        data
+        [signal]
+        .stack(level='signal')
+        .rename_axis(index={'signal': 'signal type'})
+        [channels]
+        .stack()
+        .to_frame(signal[0])
+    )
+
+    g = sns.relplot(
+        data=grasp_release_data,
+        x='relative time',
+        y=signal[0],
+        hue=hue,
+        hue_order=hue_order,
+        style='signal type',
+        style_order=signal,
+        kind='line',
+        col='phase',
+        row='channel',
+        aspect=aspect,
+        height=height,
+        facet_kws={
+            'sharex': 'col',
+            'sharey': True,
+            'margin_titles': True,
+        },
         **extra_kwargs,
     )
-    sns.despine(ax=axs[1],trim=True)
+    g.refline(x=0)
+    g.despine(trim=True)
+    g.tight_layout()
 
-    return axs
+    g.set_axis_labels('Relative time (s)',signal[0])
+    g.set_titles(col_template='{col_name} phase',row_template='channel {row_name}')
 
-def run_step_pca(td_shifted,which_area,n_components=15):
-    step_grasp_data,step_release_data = preproc.get_step_grasp_release_data(td_shifted)
-    step_grasp_data = step_grasp_data.dropna()
-    step_release_data = step_release_data.dropna()
-    
-    model = Pipeline([
-        ('pca',PCA(n_components=n_components,whiten=False)),
-    ])
-    model.fit(pd.concat([
-        step_grasp_data[which_area],
-        step_release_data[which_area],
-    ]))
-
-    return (
-        td_shifted
-        .join(
-            pd.DataFrame(
-                model.transform(td_shifted[which_area].dropna()),
-                index=td_shifted[which_area].dropna().index,
-                columns=pd.MultiIndex.from_product([[f'{which_area} pca'],range(15)]),
-            )
-        )
-    )
-
-def run_step_rrr(td_shifted,rank=15):
-    step_grasp_data,step_release_data = preproc.get_step_grasp_release_data(td_shifted)
-    step_grasp_data = step_grasp_data.dropna()
-    step_release_data = step_release_data.dropna()
-    
-    model = models.ReducedRankRegression(rank=rank)
-    model.fit(
-        pd.concat([
-            step_grasp_data['motor'],
-            step_release_data['motor'],
-        ]),
-        pd.concat([
-            step_grasp_data['sensory'],
-            step_release_data['sensory'],
-        ]),
-    )
-
-    return (
-        td_shifted
-        .join(
-            pd.concat(
-                [model.transform(td_shifted['motor'])],
-                axis=1,
-                keys=['motor rrr'],
-            )
-        )
-    )
+    return g
