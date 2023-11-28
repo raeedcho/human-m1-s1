@@ -1,4 +1,4 @@
-from . import events
+from . import events,models
 
 import scipy
 import numpy as np
@@ -177,23 +177,17 @@ def norm_and_shift_rates(td,arrays=['motor','sensory'],norm_method='softnorm'):
         Warning('Skipping array norm...')
         method = lambda x: x
 
-    td_scored = td.assign(**{
-        array: lambda df,arr=array: method(df[arr])
-        for array in arrays
-    })
-
-    td_baseline = (
-        td_scored
-        .groupby('state',observed=True)
-        .get_group('pretrial')
-        [arrays]
-        .groupby(['set_trial'])
-        .agg(lambda s: np.nanmean(s,axis=0))
+    td_shifted = (
+        td
+        .assign(**{
+            array: lambda df,arr=array: method(df[arr])
+            for array in arrays
+        })
+        .assign(**{
+            array: lambda df,arr=array: models.BaselineShifter().fit_transform(df[arr])
+            for array in arrays
+        })
     )
-    td_shifted = td_scored.assign(**{
-        array: lambda df,arr=array: df[arr]-td_baseline[arr]
-        for array in arrays
-    })
 
     return td_shifted
 
@@ -201,7 +195,4 @@ def zscore_array(arr):
     return StandardScaler().fit_transform(arr)
 
 def softnorm_array(arr,norm_const=5):
-    def get_range(arr,axis=None):
-        return np.nanmax(arr,axis=axis)-np.nanmin(arr,axis=axis)
-    activity_range = get_range(arr,axis=0)
-    return arr/(activity_range+norm_const)
+    return models.SoftnormScaler(norm_const).fit_transform(arr)

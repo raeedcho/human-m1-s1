@@ -155,3 +155,33 @@ class MaxVarPermuter(BaseEstimator,TransformerMixin):
     
     def transform(self,X):
         return X @ self.permutation_
+
+class SoftnormScaler(BaseEstimator,TransformerMixin):
+    def __init__(self, norm_const=5):
+        self.norm_const = norm_const
+
+    def fit(self,X,y=None):
+        def get_range(arr,axis=None):
+            return np.nanmax(arr,axis=axis)-np.nanmin(arr,axis=axis)
+        self.activity_range_ = get_range(X,axis=0)
+        return self
+
+    def transform(self,X):
+        return X / (self.activity_range_ + self.norm_const)
+
+class BaselineShifter(BaseEstimator,TransformerMixin):
+    def __init__(self, baseline_state='pretrial'):
+        self.baseline_state = baseline_state
+
+    def fit(self,X,y=None):
+        return self
+
+    def transform(self,X):
+        baseline = (
+            X
+            .groupby('state',observed=True)
+            .get_group(self.baseline_state)
+            .groupby('set_trial',observed=True)
+            .agg(lambda s: np.nanmean(s,axis=0))
+        )
+        return X - baseline
