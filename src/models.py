@@ -143,3 +143,15 @@ class VarimaxTransformer(BaseEstimator,TransformerMixin):
 
     def transform(self,X):
         return X @ self.rotation_matrix_
+
+class MaxVarPermuter(BaseEstimator,TransformerMixin):
+    def __init__(self):
+        pass
+
+    def fit(self,X,y=None):
+        col_var = np.var(X,axis=0)
+        self.permutation_ = np.eye(X.shape[1])[:,np.argsort(-col_var)]
+        return self
+    
+    def transform(self,X):
+        return X @ self.permutation_
